@@ -26,6 +26,8 @@ sudo just install
 
 ## Usage
 
+This README, just focuses on the qemu hook. Other hooks basically the same, so please take 
+a look at their documentation, [here](https://libvirt.org/hooks.html).
 According to official Libvirt hooks documentation, valid QEMU hook states include:
 
 - *guest_name*/prepare/begin
