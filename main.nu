@@ -5,7 +5,9 @@ def main [...args] {
 	let $state = $args.2
 	let $misc_args = $args | skip 3
 	let $basedir = $env.FILE_PWD
-	mut $guest_path = ([$basedir 'qemu.d' $guest] | path join)
+	let $filename = $env.CURRENT_FILE | path split | last
+	let $confdir = $"($filename).d"
+	mut $guest_path = ([$basedir $confdir $guest] | path join)
 	mut $state_path = ([$guest_path $hook $state] | path join)
 	use std log;
 	let $ellipsis = (char --unicode '2026')
@@ -20,7 +22,7 @@ def main [...args] {
 		} else {
 			log error $"($guest_path) does not exist."
 			log warning $"Using default hooks($ellipsis)"
-			$guest_path = ([$basedir 'qemu.d' 'default'] | path join)
+			$guest_path = ([$basedir $confdir 'default'] | path join)
 			$state_path = ([$guest_path $hook $state] | path join)
 		}
 		if ($state_path | path exists -n) {
