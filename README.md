@@ -26,19 +26,14 @@ sudo just install
 
 ## Usage
 
-This README, just focuses on the qemu hook. Other hooks basically the same, so please take 
+This README, purely focuses on the qemu hook. Other hooks basically the same, so please take 
 a look at their documentation, [here](https://libvirt.org/hooks.html).
-According to official Libvirt hooks documentation, valid QEMU hook states include:
+
+According to the official documentation, valid QEMU hook states include:
 
 - *guest_name*/prepare/begin
 - *guest_name*/start/begin
-- *guest_name*/started/begin
-- *guest_name*/stopped/end
 - *guest_name*/release/end
-- *guest_name*/migrate/begin
-- *guest_name*/restore/begin
-- *guest_name*/reconnect/begin
-- *guest_name*/attach/begin
 
 ### Example Scenario
 
@@ -62,10 +57,18 @@ nushell scripts for automation.
 
 ### Advanced Techniques
 
-Default Hooks
+#### Default Hooks
 
 If you frequently create similar VMs with identical hook requirements, simplify with a default
 hooks folder. These hooks will apply by default to all VMs unless specified otherwise.
 To exclude hooks entirely, name your VMs ending with `-woh` or `-no-hook`, e.g., `win10-gaming-woh`.
+
+#### Pure State Files
+
+If you do not want to create seperate files for each action,
+(e.g., `00-kill-dgpu-processes`, `01-create-hugepages`...)
+just create a file with that state name, (e.g., `prepare/begin`, `release/end`...).
+And even further, you can just rewrite the hook file
+(they are inside the `/etc/libvirt/hooks/` folder), (e.g., `qemu`, `lxc`...)
 
 Unlock the full potential of your VM workflow with Libvirt hooks via NuShell!
