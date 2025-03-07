@@ -15,29 +15,73 @@ def log [mode: string@__log_modes, message: string] {
   echo $"($_ansi_mode)(date now | format date '%s') | ($mode | str upcase):(ansi reset) ($message)\n" | save -af $log_file
 }
 
-def main [...args] {
-  let guest = $args | get -i 0
-  let hook = $args | get -i 1
-  let state = $args | get -i 2
-  let rest = $args | slice 3..
+def "check default dir exists or not" [] {
   let default_dir = [$env.FILE_PWD default] | path join
   if ($default_dir | path exists) {
     log info $"default dir exists at ($default_dir)"
   } else {
     log warn "default dir does not exist, install it."
   }
-  if (($guest | str ends-with "-woh") or
-    ($guest | str ends-with "-without-hooks") or
-    ($guest | str ends-with "-nh") or
-    ($guest | str ends-with "-no-hooks")) {
+}
+
+def "check hooks disabled or not" []: string -> bool {
+  (($in | str ends-with "-woh") or
+    ($in | str ends-with "-without-hooks") or
+    ($in | str ends-with "-nh") or
+    ($in | str ends-with "-no-hooks"))
+}
+
+def "check default hooks disabled or not" []: string -> bool {
+  (($in | str ends-with "-nd") or
+    ($in | str ends-with "-no-default") or
+    ($in | str ends-with "-wod") or
+    ($in | str ends-with "-without-default"))
+}
+
+def "executing order" [guest_dir: string, hook: string, state: string, ...rest] {
+  let hook_dir = $guest_dir | path join $hook
+  if ($hook_dir | path exists) {
+    log info "Hook dir found."
+    if (($hook_dir | path type) == "file") {
+      log info "Hook file found, executing it."
+      nu $hook_dir $state ...($rest)
+      exit 0
+    }
+    let state_dir = $hook_dir | path join $state
+    if ($state_dir | path exists) {
+      log info "State dir found."
+      if (($state_dir | path type) == "file") {
+        log info "State file found, executing it."
+        nu $state_dir ...($rest)
+        exit 0
+      } else {
+        ls $state_dir | sort -i | each {|file| 
+          log info $"Executing ($file)"
+          nu $file.name ...($rest)
+        }
+      }
+    } else {
+      log err "State dir not found."
+      exit -1
+    }
+  } else {
+    log err "Hook dir not found."
+    exit -1
+  }
+}
+
+def main [...args] {
+  let guest = $args | get -i 0
+  let hook = $args | get -i 1
+  let state = $args | get -i 2
+  let rest = $args | slice 3..
+  check default dir exists or not
+  if ($guest | check hooks disabled or not) {
     log info $"($guest), caught str ends-with! Hooks disabled for this guest, terminating."
     exit 0
   }
   mut skip_default_hooks = false
-  if (($guest | str ends-with "-nd") or
-    ($guest | str ends-with "-no-default") or
-    ($guest | str ends-with "-wod") or
-    ($guest | str ends-with "-without-default")) {
+  if ($guest | check default hooks disabled or not) {
     log info $"($guest), caught str ends-with! Default hooks skipped."
     $skip_default_hooks = true
   }
@@ -52,35 +96,7 @@ def main [...args] {
         nu $guest_dir $hook $state ...($rest)
         exit 0
       }
-      let hook_dir = $guest_dir | path join $hook
-      if ($hook_dir | path exists) {
-        log info "Hook dir found."
-        if (($hook_dir | path type) == "file") {
-          log info "Hook file found, executing it."
-          nu $hook_dir $state ...($rest)
-          exit 0
-        }
-        let state_dir = $hook_dir | path join $state
-        if ($state_dir | path exists) {
-          log info "State dir found."
-          if (($state_dir | path type) == "file") {
-            log info "State file found, executing it."
-            nu $state_dir ...($rest)
-            exit 0
-          } else {
-            ls $state_dir | sort -i | each {|file| 
-              log info $"Executing ($file)"
-              nu $file.name ...($rest)
-            }
-          }
-        } else {
-          log err "State dir not found."
-          exit -1
-        }
-      } else {
-        log err "Hook dir not found."
-        exit -1
-      }
+      executing order $guest_dir $hook $state ...($rest)
     } else {
       if $skip_default_hooks {
         log warn "-nd/-wod & no guest-hook dir found. Terminating."
@@ -89,7 +105,12 @@ def main [...args] {
         let default_dir = [$qemu_d 'default'] | path join
         if ($default_dir | path exists) {
           log info "no guest-hook dir found, gonna executing defaults"
-          # TODO:
+          if (($default_dir | path type) == "file") {
+            log info "Executing guest hook file"
+            nu $default_dir $hook $state ...($rest)
+            exit 0
+          }
+          executing order $default_dir $hook $state ...($rest)
         } else {
           log err "guest-hook dir not found, even default dir not found."
           log err "Please install this tool, correctly."
