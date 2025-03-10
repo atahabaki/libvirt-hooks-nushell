@@ -26,3 +26,17 @@ export def install [
   create qemu.d dir if does not exists
   install hook file $force
 }
+
+export def "install with the example simple" [
+  --force
+] {
+  create qemu.d dir if does not exists
+  install hook file $force
+  let simple_example_path = [$TOOLKIT_DIR 'examples'] | path join simple
+  let default_hook = [$BASE_DIR 'default'] | path join
+  if ($force) {
+    sudo cp -f $simple_example_path $default_hook
+  } else {
+    sudo cp $simple_example_path $default_hook
+  }
+}
