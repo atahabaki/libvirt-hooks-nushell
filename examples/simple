@@ -1,0 +1,122 @@
+#!/usr/bin/env nu
+
+def __log_modes [] { [info warn err] }
+
+def log [mode: string@__log_modes, message: string] {
+  let log_file = [$env.FILE_PWD log.txt] | path join
+  mut _ansi_mode = 0
+  if ($mode == "err") {
+    $_ansi_mode = ansi red_bold
+  } else if ($mode == "warn") {
+    $_ansi_mode = ansi yellow_bold
+  } else {
+    $_ansi_mode = ansi blue_bold
+  }
+  echo $"($_ansi_mode)(date now | format date '%s') | ($mode | str upcase):(ansi reset) ($message)\n" | save -af $log_file
+}
+
+def "reserve hugepages" [guest: string] {
+  log info "Calculating wanted_size…"
+  let hugepage_size = rg Hugepagesize /proc/meminfo | awk '{print $2}' | into int
+  let xml_file = [etc libvirt qemu $"($guest).xml"] | path join
+  log info $"XML FILE: ($xml_file)"
+  let vm_memory = open /etc/libvirt/qemu/win11.xml | get content | where tag == "memory" | get content.0.content.0 | into int
+  log info $"VM_MEMORY: ($vm_memory)"
+  # $env.VM_MEMORY = $env | default 12582912 VM_MEMORY | get VM_MEMORY | into int
+  # let wanted_size = ($env.VM_MEMORY / $hugepage_size) | into int
+  let wanted_size = ($vm_memory / $hugepage_size) | into int
+
+  mut try_count = 0
+  loop {
+    if ($try_count == 1000) {
+      break
+    }
+    log info $"Trying to allocate ($wanted_size)…"
+    let allocated_size = cat /proc/sys/vm/nr_hugepages | into int
+    echo $wanted_size | save -f /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    if $wanted_size == $allocated_size {
+      log info "Finished allocating!"
+      break
+    } else {
+      log err "Not enough, reallocating…"
+      echo $wanted_size | save -f /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    }
+    $try_count += 1
+  }
+}
+
+def "release hugepages" [] {
+  log info "Releasing hugepages"
+  echo 0 | save -f /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+}
+
+def "set governors performance" [] {
+  log info "Setting governors to performance"
+  ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | each {
+    sudo nu -c $"echo performance | save -f ($in.name)" o+e> /dev/null
+  }
+}
+
+def "set governors powersave" [] {
+  log info "Setting governors to powersave"
+  ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | each {
+    sudo nu -c $"echo powersave | save -f ($in.name)" o+e> /dev/null
+  }
+}
+
+def "set power profile performance" [] {
+  log info "Setting power profile to performance"
+  powerprofilesctl set performance
+}
+
+def "set power profile power-saver" [] {
+  log info "Setting power profile to power-saver"
+  powerprofilesctl set power-saver
+}
+
+def "isolate cpus" [] {
+  log info "Isolating cpus"
+  systemctl set-property --runtime -- user.slice AllowedCPUs=0-7
+  systemctl set-property --runtime -- system.slice AllowedCPUs=0-7
+  systemctl set-property --runtime -- init.scope AllowedCPUs=0-7
+}
+
+def "de-isolate cpus" [] {
+  log info "Returning isolated cpus"
+  systemctl set-property --runtime -- user.slice AllowedCPUs=0-15
+  systemctl set-property --runtime -- system.slice AllowedCPUs=0-15
+  systemctl set-property --runtime -- init.scope AllowedCPUs=0-15
+}
+
+def "temporarily disable system to fall into sleep" [] {
+  log info "Masking sleep-related systemd-targets"
+  systemctl mask --runtime --now sleep.target suspend.target hibernate.target hybrid-sleep.target
+}
+
+def "revert changes to system sleep behavior" [] {
+  log info "Unmasking sleep-related systemd-targets"
+  systemctl unmask --now sleep.target suspend.target hibernate.target hybrid-sleep.target
+}
+
+def main [...args] {
+  let guest = $args | get -i 0
+  let hook = $args | get -i 1
+  let state = $args | get -i 2
+  # let rest = $args | slice 3..
+  log info $"args is ($args)"
+
+  if (($hook == "prepare") and ($state == "begin")) {
+    reserve hugepages $guest
+    set governors performance
+    set power profile performance
+    isolate cpus
+    temporarily disable system to fall into sleep
+  }
+  if (($hook == "release") and ($state == "end")) {
+    release hugepages
+    set governors powersave
+    set power profile power-saver
+    de-isolate cpus
+    revert changes to system sleep behavior
+  }
+}
