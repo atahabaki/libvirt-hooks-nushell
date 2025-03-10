@@ -46,3 +46,9 @@ install
 ```
 
 That's it. The only thing left is configuration, writing the hooks or default-hooks for your own VMs, take care.
+
+After install make sure to restart `libvirtd` sytemd service, as below:
+
+```
+systemctl restart libvirtd
+```
